@@ -59,3 +59,22 @@ Two complementary sources, in priority order:
 
 - JSON output (`--json`). Add only if a consumer asks for it.
 - Update-check ("a newer version is available"). Surveillance-y; skip.
+
+## Resolution
+
+Implemented as designed; no significant deviations.
+
+What landed:
+- `cmd/version.go` — three package-level vars (`version`, `commit`, `date`); `--short` flag; resolution chain `ldflags → debug.ReadBuildInfo → "(devel)"`.
+- `cmd/root.go` — registered `newVersion()`.
+- `cmd/version_test.go` — six cases: ldflags-all-set, ldflags-version-only, `--short`, no-ldflags fallback (asserts non-empty `ifs ` prefix only, since `ReadBuildInfo` output varies), fallback `--short`, unexpected-positional rejection. Used a `withLdflags` helper with `t.Cleanup` so each test swaps and restores the package vars cleanly.
+- `CLAUDE.md` — documented the stamped-build `ldflags` invocation.
+- `.claude/skills/issuefs/SKILL.md` — added `ifs version` to the verb cheatsheet.
+
+Smoke verified:
+- Stamped: `ifs 0.1.0 (47d1998, 2026-04-28)`
+- Unstamped (`go build`): falls back to `ReadBuildInfo`, produces `ifs v0.0.0-20260428183406-47d1998fff0c+dirty (47d1998, 2026-04-28)`. The "+dirty" suffix is from uncommitted state in the working tree.
+
+Follow-ups discovered:
+- `issues/active/` and `issues/done/` directories don't exist on a fresh clone until first move. Filed as a separate issue so initial-scaffold creates all three subdirs (with `.gitkeep` to make them git-trackable).
+- The retroactive addition of this Resolution section is itself a hand-edit; future `ifs edit` (`e26997c4`) should emit a `body_edited` event when this kind of update happens through the tool.
