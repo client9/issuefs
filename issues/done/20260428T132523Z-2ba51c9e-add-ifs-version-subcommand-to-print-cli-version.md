@@ -1,7 +1,7 @@
 {
   "title": "Add 'ifs version' subcommand to print CLI version",
   "id": "20260428T132523Z-2ba51c9e",
-  "state": "backlog",
+  "state": "done",
   "created": "2026-04-28T13:25:23Z",
   "labels": [
     "feature"
@@ -15,6 +15,18 @@
       "ts": "2026-04-28T13:25:23Z",
       "type": "filed",
       "to": "backlog"
+    },
+    {
+      "ts": "2026-04-28T18:34:15Z",
+      "type": "moved",
+      "from": "backlog",
+      "to": "active"
+    },
+    {
+      "ts": "2026-04-28T18:37:32Z",
+      "type": "moved",
+      "from": "active",
+      "to": "done"
     }
   ]
 }
