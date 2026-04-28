@@ -102,6 +102,10 @@ Cost: requires *issue* discipline. Every shippable change needs a done issue. No
 
 Requires `ifs list` to be implemented first. Reuses its filter predicate chain and `Match.Load()`.
 
+## Note on entry text
+
+Issue *titles* are TODOs ("Add `ifs list`..."); changelog entries are past-tense user-facing bullets ("Added `ifs list` for browsing the backlog..."). These are similar but not identical. **At implementation time, consider extracting the entry text from a "first paragraph under the first body heading" summary convention** (proposed in `b03efee5`) rather than using the title verbatim. If list adopts that convention first, this verb inherits the same extractor and produces better changelog text. Without it, fall back to the title and accept that some entries will read awkwardly.
+
 ## Anti-goals
 
 - Don't infer from git tags by default. Separate concept; `--since-tag <ref>` could be added later if asked.

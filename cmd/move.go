@@ -19,13 +19,17 @@ func newMove() *cobra.Command {
 		Long: `Move an issue across state directories (backlog/active/done).
 
 Resolves <ref> as a path, full filename, full ID, or any unique prefix of
-the 8-hex random suffix. Updates the frontmatter "state" field, appends a
-"moved" event to the log, then renames the file across directories. The
-basename is unchanged so git's rename detection pairs the move automatically
-when the user later runs ` + "`git add`" + `.
+the 8-hex random suffix.
 
-A move to the same state is a no-op (with a notice on stderr). Pure file
-operation; never runs git.`,
+Contract: after this command succeeds, both the file's location AND its
+frontmatter "state" field equal <state>. Always. The verb is idempotent
+and self-healing — if you ` + "`git mv`" + ` first to preserve git's rename detection,
+running ` + "`ifs move <ref> <state>`" + ` afterward will sync the metadata. If
+frontmatter and directory disagree, this verb fixes them.
+
+A move where both directory AND frontmatter already equal <state> is a true
+no-op (with a notice on stderr; no event appended). Pure file operation;
+never runs git.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMove(cmd.OutOrStdout(), cmd.ErrOrStderr(), args[0], args[1])
@@ -59,45 +63,58 @@ func runMove(stdout, stderr io.Writer, ref, target string) error {
 		return err
 	}
 
-	if m.State == target {
-		fmt.Fprintf(stderr, "%s is already in %s\n", m.Short, target)
-		fmt.Fprintln(stdout, m.Path)
-		return nil
-	}
-
 	iss, err := readIssue(m.Path)
 	if err != nil {
 		return err
 	}
 
-	now := time.Now().UTC().Truncate(time.Second)
-	iss.Events = append(iss.Events, issue.NewMoved(now, m.State, target))
-	iss.State = target
+	needFmUpdate := iss.State != target
+	needRename := m.State != target
 
-	data, err := issue.Marshal(iss)
-	if err != nil {
-		return err
-	}
-
-	// Edit-then-rename: write updated content in place first so a crash
-	// leaves the file in the source dir with state matching the source dir.
-	// Recoverable; no data loss.
-	if err := os.WriteFile(m.Path, data, 0o644); err != nil {
-		return err
+	// True no-op: both location and frontmatter already in sync.
+	if !needFmUpdate && !needRename {
+		fmt.Fprintf(stderr, "%s is already in %s\n", m.Short, target)
+		fmt.Fprintln(stdout, m.Path)
+		return nil
 	}
 
-	targetDir, err := store.EnsureSubdir(root, target)
-	if err != nil {
-		return err
+	// Frontmatter update: append a `moved` event whose `from` is the
+	// frontmatter's previous state (not the directory). Records what the
+	// issue *thought* its state was, which is the canonical history.
+	if needFmUpdate {
+		now := time.Now().UTC().Truncate(time.Second)
+		iss.Events = append(iss.Events, issue.NewMoved(now, iss.State, target))
+		iss.State = target
+		data, err := issue.Marshal(iss)
+		if err != nil {
+			return err
+		}
+		// Edit-then-rename: write updated content in place first so a crash
+		// leaves the file in the source dir with state matching the source dir.
+		if err := os.WriteFile(m.Path, data, 0o644); err != nil {
+			return err
+		}
 	}
-	newPath := filepath.Join(targetDir, m.Name)
-	if _, err := os.Stat(newPath); err == nil {
-		return fmt.Errorf("destination already exists: %s", newPath)
+
+	// Rename: move the file across directories if it's not already in the
+	// target. When this is the only change (frontmatter was already correct),
+	// no event is appended — the directory was the bug, no transition happened.
+	finalPath := m.Path
+	if needRename {
+		targetDir, err := store.EnsureSubdir(root, target)
+		if err != nil {
+			return err
+		}
+		newPath := filepath.Join(targetDir, m.Name)
+		if _, err := os.Stat(newPath); err == nil {
+			return fmt.Errorf("destination already exists: %s", newPath)
+		}
+		if err := os.Rename(m.Path, newPath); err != nil {
+			return err
+		}
+		finalPath = newPath
 	}
-	if err := os.Rename(m.Path, newPath); err != nil {
-		return err
-	}
-	fmt.Fprintln(stdout, newPath)
+	fmt.Fprintln(stdout, finalPath)
 	return nil
 }
 

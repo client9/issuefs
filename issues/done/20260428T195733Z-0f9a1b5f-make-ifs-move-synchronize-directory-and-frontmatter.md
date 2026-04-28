@@ -1,7 +1,7 @@
 {
   "title": "Make 'ifs move' synchronize directory and frontmatter (idempotent, self-healing)",
   "id": "20260428T195733Z-0f9a1b5f",
-  "state": "backlog",
+  "state": "done",
   "created": "2026-04-28T19:57:33Z",
   "labels": [
     "bug"
@@ -15,6 +15,18 @@
       "ts": "2026-04-28T19:57:33Z",
       "type": "filed",
       "to": "backlog"
+    },
+    {
+      "ts": "2026-04-28T21:12:32Z",
+      "type": "moved",
+      "from": "backlog",
+      "to": "active"
+    },
+    {
+      "ts": "2026-04-28T21:14:40Z",
+      "type": "moved",
+      "from": "active",
+      "to": "done"
     }
   ]
 }
@@ -156,4 +168,20 @@ Plus existing tests should still pass; the new logic is a superset.
 
 ## Resolution
 
-(filled in when closed)
+Implemented as designed. All five truth-table rows behave correctly; the `git mv` → `ifs move` workflow now syncs the frontmatter and appends an honest `moved` event.
+
+What landed:
+- `cmd/move.go` — `runMove` now computes `needFmUpdate := iss.State != target` and `needRename := m.State != target` independently. True no-op (both false) prints the "already in" stderr notice and exits. Frontmatter update appends `moved` event with `from: iss.State` (not `m.State`) — records the actual transition the issue thought it was making, not whatever the directory happened to be. Rename is skipped when the file is already in the target directory. The "directory wrong, frontmatter right" repair case (Row 5 of the table) does the rename and appends no event — a directory bug isn't a state transition. `--help` long description rewritten to state the new contract explicitly.
+- `cmd/move_test.go` — 6 new cases covering each truth-table row plus a verify-after-sync sanity check. `gitMove` test helper simulates `git mv` (file moves, frontmatter doesn't); `parseIssueFile` and `countMovedEvents` helpers keep assertions tight.
+
+Smoke verified end-to-end: `git mv backlog/X.md active/X.md && ifs move <short> active` correctly sets `state: active` in frontmatter and appends `moved backlog→active` (correct `from`).
+
+Tests: all packages green.
+
+Deviations from the original plan:
+- None. The implementation followed the proposed code sketch nearly verbatim. The one cosmetic change: tracked the final output path in a `finalPath` variable so the success-line print works for both the "renamed" and "fm-update-only" paths without duplicating the `Fprintln`.
+
+Follow-ups discovered:
+- This bug is now closed, but a related class remains: **`ifs verify` doesn't catch directory ↔ frontmatter mismatches.** A file in `active/` with `state: backlog` in its frontmatter passes verify today (verify only checks frontmatter ↔ events). Worth a separate small bug to add a "directory matches frontmatter state" check to `Verify`. Not filed yet — file if/when someone hits it again.
+- `ifs reconcile` (`7b8aca29`), when implemented, will also handle this drift (across all issues at once). The verify check above is the cheaper, in-the-moment version.
+- The `Row 5` no-event-on-directory-repair semantics are a small but principled choice: events should record state *transitions*, not *repairs*. If we ever want to record repairs, an `event.Type == "repaired"` (with `field: "directory"`) would be the right shape, but adding that speculatively is YAGNI. Note here in case it ever comes up.

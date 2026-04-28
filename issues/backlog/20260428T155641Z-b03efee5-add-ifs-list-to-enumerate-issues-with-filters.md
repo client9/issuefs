@@ -86,3 +86,4 @@ Sample (rendered via `ascii` style):
 - Performance: parsing every file on each `list` is fine into the thousands. No cache until measured.
 - This is prerequisite for `ifs changelog`, which reuses the filter machinery.
 - Implement *after* `view` (`aee0cbb9`). View establishes the `internal/md/` helpers (table assembly, cell escaping); list is the second consumer that confirms the right shape. If list lands first, the helpers get built here and view inherits them.
+- **At implementation time, consider adding a `--verbose` mode that includes a one-line summary per issue.** If pursued, adopt the convention "first paragraph under the first body heading is the issue's summary" (codify in SKILL.md as a new filing convention). Most existing issues already follow this informally — a `## Concept`/`## Motivation`/`## Behavior` heading followed by a 1-3 sentence pitch. A small extractor (~15 lines) gets this from the body without schema changes.
