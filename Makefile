@@ -27,6 +27,9 @@ lint: ## lint and verify repo is already formatted
 build: ## build the ifs CLI
 	go build -o ifs .
 
+test: ## run tests
+	go test ./...
+
 clean: ## clean up
 	rm -f *.out
 	rm -f ifs
