@@ -1,6 +1,6 @@
 module github.com/nickg/issuefs
 
-go 1.26.2
+go 1.24.0
 
 require (
 	github.com/charmbracelet/glamour v1.0.0
