@@ -13,6 +13,7 @@ func newRoot() *cobra.Command {
 	root.AddCommand(newMove())
 	root.AddCommand(newVerify())
 	root.AddCommand(newVersion())
+	root.AddCommand(newView())
 	return root
 }
 
