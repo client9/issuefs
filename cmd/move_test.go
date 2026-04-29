@@ -9,6 +9,23 @@ import (
 	"github.com/nickg/issuefs/internal/issue"
 )
 
+// mdEntries returns only the .md files from a directory listing. Filters out
+// .gitkeep and any other non-issue files Scaffold creates.
+func mdEntries(t *testing.T, dir string) []os.DirEntry {
+	t.Helper()
+	all, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]os.DirEntry, 0, len(all))
+	for _, e := range all {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // createOne runs `ifs create -t <title>` and returns the resulting path.
 func createOne(t *testing.T, title string) string {
 	t.Helper()
@@ -31,7 +48,7 @@ func TestMove_BacklogToActive(t *testing.T) {
 	t.Chdir(dir)
 	createOne(t, "fix rocket")
 
-	entries, _ := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 backlog file, got %d", len(entries))
 	}
@@ -79,7 +96,7 @@ func TestMove_VerifiesAfter(t *testing.T) {
 	}
 
 	// Find the file (it's now back in backlog) and verify.
-	entries, _ := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
 	if len(entries) != 1 {
 		t.Fatalf("expected file back in backlog, got %d entries", len(entries))
 	}
@@ -94,7 +111,7 @@ func TestMove_SameStateNoOp(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	createOne(t, "no-op")
-	entries, _ := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
 	short := strings.Split(entries[0].Name(), "-")[1]
 
 	root := newRoot()
@@ -113,7 +130,7 @@ func TestMove_InvalidState(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	createOne(t, "x")
-	entries, _ := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
 	short := strings.Split(entries[0].Name(), "-")[1]
 
 	root := newRoot()
@@ -182,7 +199,7 @@ func TestMoveSync_Row1_Standard(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	createOne(t, "row 1")
-	entries, _ := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
 	name := entries[0].Name()
 	short := strings.Split(name, "-")[1]
 
@@ -208,7 +225,7 @@ func TestMoveSync_Row2_GitMoveFirst_FrontmatterRepair(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	createOne(t, "row 2")
-	entries, _ := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
 	name := entries[0].Name()
 	short := strings.Split(name, "-")[1]
 
@@ -249,7 +266,7 @@ func TestMoveSync_Row3_WrongTargetAfterGitMv(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	createOne(t, "row 3")
-	entries, _ := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
 	name := entries[0].Name()
 	short := strings.Split(name, "-")[1]
 
@@ -293,7 +310,7 @@ func TestMoveSync_Row4_TrueNoOp(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	createOne(t, "row 4")
-	entries, _ := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
 	name := entries[0].Name()
 	short := strings.Split(name, "-")[1]
 
@@ -318,7 +335,7 @@ func TestMoveSync_Row5_DirectoryOnlyRepair(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	createOne(t, "row 5")
-	entries, _ := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
 	name := entries[0].Name()
 	short := strings.Split(name, "-")[1]
 
@@ -362,7 +379,7 @@ func TestMoveSync_AllRowsVerifyClean(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	createOne(t, "verify after sync")
-	entries, _ := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
 	name := entries[0].Name()
 	short := strings.Split(name, "-")[1]
 

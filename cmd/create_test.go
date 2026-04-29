@@ -26,12 +26,9 @@ func TestCreate_Integration(t *testing.T) {
 	}
 
 	backlog := filepath.Join(dir, "issues", "backlog")
-	entries, err := os.ReadDir(backlog)
-	if err != nil {
-		t.Fatal(err)
-	}
+	entries := mdEntries(t, backlog)
 	if len(entries) != 1 {
-		t.Fatalf("expected 1 file in %s, got %d", backlog, len(entries))
+		t.Fatalf("expected 1 .md file in %s, got %d", backlog, len(entries))
 	}
 	name := entries[0].Name()
 	if !strings.HasSuffix(name, "-fix-space-rocket-thrusters.md") {

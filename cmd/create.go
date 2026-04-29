@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -100,17 +101,22 @@ func runCreate(stdout io.Writer, stdin io.Reader, o *createOpts) error {
 	if err != nil {
 		return err
 	}
-	root, found, err := store.Resolve(cwd)
+	root, _, err := store.Resolve(cwd)
 	if err != nil {
 		return err
 	}
-	if !found {
-		fmt.Fprintf(stdout, "creating new issues directory at %s\n", root)
-	}
-	dir, err := store.EnsureSubdir(root, o.state)
+	created, err := store.Scaffold(root)
 	if err != nil {
 		return err
 	}
+	for _, p := range created {
+		rel, relErr := filepath.Rel(cwd, p)
+		if relErr != nil {
+			rel = p
+		}
+		fmt.Fprintf(stdout, "created %s\n", rel)
+	}
+	dir := filepath.Join(root, o.state)
 	name := issue.Filename(iss.ID, issue.Slug(iss.Title))
 	path, err := store.WriteNew(dir, name, data)
 	if err != nil {

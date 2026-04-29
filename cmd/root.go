@@ -10,6 +10,7 @@ func newRoot() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.AddCommand(newCreate())
+	root.AddCommand(newInit())
 	root.AddCommand(newList())
 	root.AddCommand(newMove())
 	root.AddCommand(newVerify())

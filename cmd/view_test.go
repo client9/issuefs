@@ -42,9 +42,9 @@ func setupOneIssueWithBody(t *testing.T, title, body string, labels ...string) (
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
-	if err != nil || len(entries) != 1 {
-		t.Fatalf("expected 1 backlog entry; err=%v len=%d", err, len(entries))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 backlog entry; len=%d", len(entries))
 	}
 	short = strings.Split(entries[0].Name(), "-")[1]
 	return dir, short
@@ -111,7 +111,7 @@ func TestView_NewlineInTitleIsNormalized(t *testing.T) {
 	// the escape helper handles them if they appear.
 	dir, _ := setupOneIssue(t, "single line")
 	// Hand-edit to inject a newline, then re-view.
-	entries, _ := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
 	path := filepath.Join(dir, "issues", "backlog", entries[0].Name())
 	data, _ := os.ReadFile(path)
 	updated := strings.Replace(string(data), `"title": "single line"`, `"title": "two\nlines"`, 1)
@@ -346,7 +346,7 @@ func TestView_FormatRaw_BytesIdentical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entries, _ := os.ReadDir(filepath.Join(dir, "issues", "backlog"))
+	entries := mdEntries(t, filepath.Join(dir, "issues", "backlog"))
 	want, err := os.ReadFile(filepath.Join(dir, "issues", "backlog", entries[0].Name()))
 	if err != nil {
 		t.Fatal(err)
