@@ -5,6 +5,12 @@ SHELL := sh
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
+version: ## print OS, Go, and golangci versions
+        @echo $$0
+        @uname -a
+        @go version
+        @golangci-lint --version
+
 cover: ## generate code coverage report
 	rm -f cover.out
 	go test -run='^Test' -coverprofile=cover.out -coverpkg=.
