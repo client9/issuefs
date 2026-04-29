@@ -1,9 +1,10 @@
 module github.com/nickg/issuefs
 
-go 1.24.0
+go 1.26
 
 require (
 	github.com/charmbracelet/glamour v1.0.0
+	github.com/client9/nowandlater v0.9.0
 	github.com/mattn/go-isatty v0.0.22
 	github.com/spf13/cobra v1.10.2
 )
