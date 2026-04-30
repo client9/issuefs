@@ -1,27 +1,24 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/client9/nowandlater"
 	"github.com/nickg/issuefs/internal/issue"
-	"github.com/nickg/issuefs/internal/md"
 	"github.com/nickg/issuefs/internal/store"
 	"github.com/spf13/cobra"
 )
 
-// listEntry pairs a Match with its loaded Issue. Defined as a named type so
-// it can be passed to helpers without anonymous-struct juggling.
-type listEntry struct {
-	match store.Match
-	iss   *issue.Issue
+// listItem pairs a Match with its loaded Issue. Fields are exported so text
+// templates can access them directly.
+type listItem struct {
+	Match store.Match
+	Issue *issue.Issue
 }
 
 type listOpts struct {
@@ -32,8 +29,7 @@ type listOpts struct {
 	limit      int
 	sort       string
 	since      string
-	format     string
-	jsonAlias  bool
+	template   string
 }
 
 func newList() *cobra.Command {
@@ -44,9 +40,10 @@ func newList() *cobra.Command {
 		Long: `Enumerate issues across state directories, applying filters.
 
 Default state filter is "backlog,active" (matches gh's "open" default).
-Output is a markdown table assembled in-memory and rendered via Glamour
-(ascii style for plaintext or piped output, themed style for TTYs).
-` + "`--format json`" + ` bypasses Glamour and emits a JSON array.`,
+Output is driven by a Go text/template. With no --template flag, list renders
+its built-in template, which matches the current tabular output. Markdown
+templates are rendered through the existing markdown pipeline; other templates
+emit plain text.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runList(cmd.OutOrStdout(), o)
@@ -60,21 +57,11 @@ Output is a markdown table assembled in-memory and rendered via Glamour
 	f.IntVarP(&o.limit, "limit", "L", 30, "maximum issues to display")
 	f.StringVar(&o.sort, "sort", "created", "sort order: created|updated (desc)")
 	f.StringVar(&o.since, "since", "", "only include issues created/updated on or after this date (ISO or 'last month', '3 days ago', etc.)")
-	f.StringVar(&o.format, "format", "auto", "output format: auto|ansi|ascii|json|raw-md")
-	f.BoolVar(&o.jsonAlias, "json", false, "alias for --format json")
+	f.StringVar(&o.template, "template", "", "template file used to render the list output")
 	return c
 }
 
 func runList(stdout io.Writer, o *listOpts) error {
-	if o.jsonAlias {
-		o.format = "json"
-	}
-	switch o.format {
-	case "auto", "ansi", "ascii", "json", "raw-md":
-		// ok
-	default:
-		return fmt.Errorf("--format must be one of auto, ansi, ascii, json, raw-md (got %q)", o.format)
-	}
 	switch o.sort {
 	case "created", "updated":
 		// ok
@@ -104,8 +91,7 @@ func runList(stdout io.Writer, o *listOpts) error {
 		return err
 	}
 	if !found {
-		// No issues directory: equivalent to no matches. Emit empty output.
-		return emitEmpty(stdout, o.format)
+		return renderList(stdout, listTemplateData{}, o.template)
 	}
 
 	r, err := store.NewResolver(root)
@@ -114,7 +100,7 @@ func runList(stdout io.Writer, o *listOpts) error {
 	}
 
 	matches := r.All()
-	entries := make([]listEntry, 0, len(matches))
+	entries := make([]listItem, 0, len(matches))
 	for _, m := range matches {
 		if !slices.Contains(states, m.State) {
 			continue
@@ -138,13 +124,13 @@ func runList(stdout io.Writer, o *listOpts) error {
 				continue
 			}
 		}
-		entries = append(entries, listEntry{m, iss})
+		entries = append(entries, listItem{Match: m, Issue: iss})
 	}
 
 	// Sort: descending by created or updated time.
 	sort.Slice(entries, func(i, j int) bool {
-		ti := issueSortTime(entries[i].iss, o.sort)
-		tj := issueSortTime(entries[j].iss, o.sort)
+		ti := issueSortTime(entries[i].Issue, o.sort)
+		tj := issueSortTime(entries[j].Issue, o.sort)
 		return ti.After(tj)
 	})
 
@@ -152,35 +138,7 @@ func runList(stdout io.Writer, o *listOpts) error {
 		entries = entries[:o.limit]
 	}
 
-	if o.format == "json" {
-		issues := make([]*issue.Issue, len(entries))
-		for i, e := range entries {
-			issues[i] = e.iss
-		}
-		enc := json.NewEncoder(stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(issues)
-	}
-
-	doc := assembleListDocument(entries)
-	if o.format == "raw-md" {
-		_, err := io.WriteString(stdout, doc)
-		return err
-	}
-
-	// In `auto` with no matches, glamour rendering of an empty doc would just
-	// emit a blank line. Skip it for cleanliness.
-	if doc == "" {
-		return nil
-	}
-
-	style := pickStyle(o.format, stdout)
-	rendered, err := renderMarkdown(doc, style)
-	if err != nil {
-		return err
-	}
-	_, err = io.WriteString(stdout, rendered)
-	return err
+	return renderList(stdout, listTemplateData{Entries: entries, Count: len(entries), Now: time.Now().UTC()}, o.template)
 }
 
 func normalizeStates(states []string) ([]string, error) {
@@ -246,31 +204,3 @@ func parseSince(s string) (time.Time, error) {
 	}
 	return start, nil
 }
-
-func assembleListDocument(entries []listEntry) string {
-	if len(entries) == 0 {
-		return ""
-	}
-	rows := make([][]string, 0, len(entries))
-	for _, e := range entries {
-		rows = append(rows, []string{
-			md.EscapeCell(e.match.Short),
-			md.EscapeCell(e.match.State),
-			md.EscapeCell(e.iss.Title),
-			md.EscapeCell(strings.Join(e.iss.Labels, ", ")),
-			md.EscapeCell(e.iss.Created.Format("2006-01-02")),
-		})
-	}
-	return md.Table([]string{"ID", "State", "Title", "Labels", "Created"}, rows)
-}
-
-func emitEmpty(stdout io.Writer, format string) error {
-	if format == "json" {
-		_, err := fmt.Fprintln(stdout, "[]")
-		return err
-	}
-	return nil
-}
-
-// renderMarkdown is defined in view.go; reused here without modification.
-// pickStyle is also from view.go.

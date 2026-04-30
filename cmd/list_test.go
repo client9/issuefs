@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +31,16 @@ func runListErr(t *testing.T, args ...string) error {
 	root.SetErr(&buf)
 	root.SetArgs(append([]string{"list"}, args...))
 	return root.Execute()
+}
+
+func writeTemplate(t *testing.T, name, contents string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 // seedIssues files several issues with controlled labels and assignees.
@@ -80,24 +89,30 @@ func seedIssues(t *testing.T) {
 	}
 }
 
-func TestList_DefaultExcludesDone(t *testing.T) {
+func TestList_DefaultTemplate(t *testing.T) {
 	t.Chdir(t.TempDir())
 	seedIssues(t)
-	out := runList_(t, "--format", "raw-md")
-	if strings.Contains(out, "Done already") {
-		t.Errorf("default list should exclude done issues:\n%s", out)
+	out := runList_(t)
+	if out == "" {
+		t.Fatalf("expected default list output")
+	}
+	if strings.Contains(out, "\x1b[") {
+		t.Fatalf("default template should render as plain ascii on a buffer:\n%q", out)
 	}
 	for _, want := range []string{"Fix bug A", "Add feature X", "Bug and feature", "Assigned only"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in default list:\n%s", want, out)
 		}
 	}
+	if strings.Contains(out, "Done already") {
+		t.Errorf("default list should exclude done issues:\n%s", out)
+	}
 }
 
 func TestList_StateFilter(t *testing.T) {
 	t.Chdir(t.TempDir())
 	seedIssues(t)
-	out := runList_(t, "-s", "done", "--format", "raw-md")
+	out := runList_(t, "-s", "done")
 	if !strings.Contains(out, "Done already") {
 		t.Errorf("done-state filter should include 'Done already':\n%s", out)
 	}
@@ -109,7 +124,7 @@ func TestList_StateFilter(t *testing.T) {
 func TestList_StateAll(t *testing.T) {
 	t.Chdir(t.TempDir())
 	seedIssues(t)
-	out := runList_(t, "-s", "all", "--format", "raw-md")
+	out := runList_(t, "-s", "all")
 	for _, want := range []string{"Fix bug A", "Done already"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--state all should include %q:\n%s", want, out)
@@ -121,7 +136,7 @@ func TestList_LabelFilter_AND(t *testing.T) {
 	t.Chdir(t.TempDir())
 	seedIssues(t)
 	// -l bug -l feature should match only "Bug and feature" (AND semantics).
-	out := runList_(t, "-l", "bug", "-l", "feature", "--format", "raw-md")
+	out := runList_(t, "-l", "bug", "-l", "feature")
 	if !strings.Contains(out, "Bug and feature") {
 		t.Errorf("expected 'Bug and feature':\n%s", out)
 	}
@@ -135,7 +150,7 @@ func TestList_LabelFilter_AND(t *testing.T) {
 func TestList_AssigneeFilter(t *testing.T) {
 	t.Chdir(t.TempDir())
 	seedIssues(t)
-	out := runList_(t, "-a", "alice", "--format", "raw-md")
+	out := runList_(t, "-a", "alice")
 	for _, want := range []string{"Bug and feature", "Assigned only"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q:\n%s", want, out)
@@ -146,180 +161,13 @@ func TestList_AssigneeFilter(t *testing.T) {
 	}
 }
 
-func TestList_FormatJSON(t *testing.T) {
-	t.Chdir(t.TempDir())
-	seedIssues(t)
-	out := runList_(t, "-l", "bug", "--format", "json")
-	if !json.Valid([]byte(out)) {
-		t.Fatalf("invalid JSON:\n%s", out)
-	}
-	var arr []map[string]any
-	if err := json.Unmarshal([]byte(out), &arr); err != nil {
-		t.Fatal(err)
-	}
-	for _, raw := range arr {
-		labels, _ := raw["labels"].([]any)
-		hasBug := false
-		for _, l := range labels {
-			if l == "bug" {
-				hasBug = true
-			}
-		}
-		if !hasBug {
-			t.Errorf("filtered list should only contain bug-labeled issues, got: %v", raw["labels"])
-		}
-	}
-	if len(arr) == 0 {
-		t.Errorf("expected at least one bug-labeled issue")
-	}
-}
-
-func TestList_JSONAlias(t *testing.T) {
-	t.Chdir(t.TempDir())
-	seedIssues(t)
-	out := runList_(t, "--json")
-	if !json.Valid([]byte(out)) {
-		t.Fatalf("--json alias should produce JSON:\n%s", out)
-	}
-}
-
 func TestList_Limit(t *testing.T) {
 	t.Chdir(t.TempDir())
 	seedIssues(t)
-	out := runList_(t, "-L", "2", "--format", "json")
-	var arr []map[string]any
-	if err := json.Unmarshal([]byte(out), &arr); err != nil {
-		t.Fatal(err)
-	}
-	if len(arr) != 2 {
-		t.Errorf("--limit 2 should yield 2 entries, got %d", len(arr))
-	}
-}
-
-func TestList_SortCreatedDesc(t *testing.T) {
-	t.Chdir(t.TempDir())
-	seedIssues(t)
-	out := runList_(t, "--format", "json")
-	var arr []map[string]any
-	if err := json.Unmarshal([]byte(out), &arr); err != nil {
-		t.Fatal(err)
-	}
-	// Created times should be non-increasing (desc).
-	prev := time.Now().Add(time.Hour) // way in the future as initial bound
-	for _, raw := range arr {
-		ts, _ := time.Parse(time.RFC3339, raw["created"].(string))
-		if ts.After(prev) {
-			t.Errorf("not descending: %s after %s", ts, prev)
-		}
-		prev = ts
-	}
-}
-
-func TestList_EmptyResult(t *testing.T) {
-	t.Chdir(t.TempDir())
-	seedIssues(t)
-	out := runList_(t, "-l", "nonexistent", "--format", "raw-md")
-	if out != "" {
-		t.Errorf("no matches should produce no output, got:\n%s", out)
-	}
-}
-
-func TestList_EmptyResultJSON(t *testing.T) {
-	t.Chdir(t.TempDir())
-	seedIssues(t)
-	out := strings.TrimSpace(runList_(t, "-l", "nonexistent", "--json"))
-	if out != "[]" {
-		t.Errorf("no matches in JSON should be `[]`, got: %q", out)
-	}
-}
-
-func TestList_NoIssuesDir(t *testing.T) {
-	t.Chdir(t.TempDir())
-	out := strings.TrimSpace(runList_(t, "--json"))
-	if out != "[]" {
-		t.Errorf("no issues dir should produce `[]` for JSON, got: %q", out)
-	}
-	if outRaw := runList_(t, "--format", "raw-md"); outRaw != "" {
-		t.Errorf("no issues dir should produce empty for raw-md, got: %q", outRaw)
-	}
-}
-
-func TestList_Since_ISO(t *testing.T) {
-	t.Chdir(t.TempDir())
-	seedIssues(t)
-	tomorrow := time.Now().Add(24 * time.Hour).Format("2006-01-02")
-	out := runList_(t, "--since", tomorrow, "--format", "json")
-	var arr []map[string]any
-	if err := json.Unmarshal([]byte(out), &arr); err != nil {
-		t.Fatal(err)
-	}
-	if len(arr) != 0 {
-		t.Errorf("--since tomorrow should exclude all of today's issues, got %d", len(arr))
-	}
-}
-
-func TestList_Since_Adhoc(t *testing.T) {
-	t.Chdir(t.TempDir())
-	seedIssues(t)
-	out := runList_(t, "--since", "yesterday", "--format", "json")
-	var arr []map[string]any
-	if err := json.Unmarshal([]byte(out), &arr); err != nil {
-		t.Fatalf("invalid JSON:\n%s\n%v", out, err)
-	}
-	if len(arr) == 0 {
-		t.Errorf("--since yesterday should include today's issues")
-	}
-}
-
-func TestList_Since_Bad(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := runListErr(t, "--since", "completely not a date xyz123"); err == nil {
-		t.Errorf("expected --since parse error")
-	}
-}
-
-func TestList_BadFormat(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := runListErr(t, "--format", "yaml"); err == nil {
-		t.Errorf("expected --format error")
-	}
-}
-
-func TestList_BadState(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := runListErr(t, "-s", "wip"); err == nil {
-		t.Errorf("expected --state error")
-	}
-}
-
-func TestList_BadSort(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := runListErr(t, "--sort", "alphabetical"); err == nil {
-		t.Errorf("expected --sort error")
-	}
-}
-
-func TestList_PipeInTitleEscaped(t *testing.T) {
-	t.Chdir(t.TempDir())
-	root := newRoot()
-	var buf strings.Builder
-	root.SetOut(&buf)
-	root.SetArgs([]string{"create", "-t", "title|with|pipes"})
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	out := runList_(t, "--format", "raw-md")
-	if !strings.Contains(out, `title\|with\|pipes`) {
-		t.Errorf("pipes should be escaped in markdown table cell:\n%s", out)
-	}
-}
-
-func TestList_AsciiHasNoANSI(t *testing.T) {
-	t.Chdir(t.TempDir())
-	seedIssues(t)
-	out := runList_(t, "--format", "ascii")
-	if strings.Contains(out, "\x1b[") {
-		t.Errorf("ascii output should contain no ANSI escapes, got:\n%q", out)
+	templatePath := writeTemplate(t, "count.tmpl", "count={{ len .Entries }}")
+	out := strings.TrimSpace(runList_(t, "-L", "2", "--template", templatePath))
+	if out != "count=2" {
+		t.Errorf("--limit 2 should yield 2 entries, got %q", out)
 	}
 }
 
@@ -358,27 +206,157 @@ func TestList_SortUpdated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Default state filter (backlog+active) includes both.
-	out := runList_(t, "--sort", "updated", "--format", "json")
-	var arr []map[string]any
-	if err := json.Unmarshal([]byte(out), &arr); err != nil {
-		t.Fatal(err)
+	templatePath := writeTemplate(t, "titles.tmpl", "{{ range .Entries }}{{ .Issue.Title }}\n{{ end }}")
+	out := runList_(t, "--sort", "updated", "--template", templatePath)
+	iA := strings.Index(out, "A first")
+	iB := strings.Index(out, "B second")
+	if iA == -1 || iB == -1 {
+		t.Fatalf("expected both issues in output:\n%s", out)
 	}
-	if len(arr) != 2 {
-		t.Fatalf("expected 2 issues, got %d", len(arr))
-	}
-	// A was moved most recently, so it should sort first under --sort updated.
-	if arr[0]["title"] != "A first" {
-		t.Errorf("--sort updated should put most-recently-updated first; got %v", arr[0]["title"])
+	if iA > iB {
+		t.Errorf("--sort updated should put most-recently-updated first:\n%s", out)
 	}
 }
 
-func TestList_EmptyDir_Verify(t *testing.T) {
-	// Sanity: list output validates against the temp dir we look at.
-	dir := t.TempDir()
-	t.Chdir(dir)
+func TestList_EmptyResult(t *testing.T) {
+	t.Chdir(t.TempDir())
 	seedIssues(t)
-	if _, err := os.Stat(filepath.Join(dir, "issues", "backlog")); err != nil {
-		t.Fatal("expected issues dir to be created by seeding")
+	out := runList_(t, "-l", "nonexistent")
+	if out != "" {
+		t.Errorf("no matches should produce no output, got:\n%s", out)
+	}
+}
+
+func TestList_NoIssuesDir(t *testing.T) {
+	t.Chdir(t.TempDir())
+	out := runList_(t)
+	if out != "" {
+		t.Errorf("no issues dir should produce empty output, got: %q", out)
+	}
+}
+
+func TestList_Since_ISO(t *testing.T) {
+	t.Chdir(t.TempDir())
+	seedIssues(t)
+	tomorrow := time.Now().Add(24 * time.Hour).Format("2006-01-02")
+	out := runList_(t, "--since", tomorrow)
+	if out != "" {
+		t.Errorf("--since tomorrow should exclude all of today's issues, got:\n%s", out)
+	}
+}
+
+func TestList_Since_Adhoc(t *testing.T) {
+	t.Chdir(t.TempDir())
+	seedIssues(t)
+	out := runList_(t, "--since", "yesterday")
+	if len(out) == 0 {
+		t.Errorf("--since yesterday should include today's issues")
+	}
+}
+
+func TestList_Since_Bad(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := runListErr(t, "--since", "completely not a date xyz123"); err == nil {
+		t.Errorf("expected --since parse error")
+	}
+}
+
+func TestList_BadState(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := runListErr(t, "-s", "wip"); err == nil {
+		t.Errorf("expected --state error")
+	}
+}
+
+func TestList_BadSort(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := runListErr(t, "--sort", "alphabetical"); err == nil {
+		t.Errorf("expected --sort error")
+	}
+}
+
+func TestList_TemplateFileMissing(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := runListErr(t, "--template", "missing.tmpl"); err == nil {
+		t.Fatalf("expected missing template file error")
+	}
+}
+
+func TestList_TemplateParseError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	path := writeTemplate(t, "bad.tmpl", "{{")
+	if err := runListErr(t, "--template", path); err == nil {
+		t.Fatalf("expected template parse error")
+	}
+}
+
+func TestList_TemplateExecError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	seedIssues(t)
+	path := writeTemplate(t, "bad.tmpl", "{{ .Nope }}")
+	if err := runListErr(t, "--template", path); err == nil {
+		t.Fatalf("expected template execution error")
+	}
+}
+
+func TestList_MarkdownTemplateRenders(t *testing.T) {
+	t.Chdir(t.TempDir())
+	seedIssues(t)
+	raw := "**Report**\n{{ len .Entries }} issues\n"
+	path := writeTemplate(t, "report.md", raw)
+	out := runList_(t, "--template", path)
+	if strings.Contains(out, "\x1b[") {
+		t.Fatalf("markdown template should render without ANSI in a buffer:\n%q", out)
+	}
+	if out == raw {
+		t.Fatalf("markdown template should be rendered, not emitted raw:\n%s", out)
+	}
+	if !strings.Contains(out, "Report") || !strings.Contains(out, "4 issues") {
+		t.Fatalf("markdown template output missing expected content:\n%s", out)
+	}
+}
+
+func TestList_PlainTemplateBypassesMarkdown(t *testing.T) {
+	t.Chdir(t.TempDir())
+	seedIssues(t)
+	path := writeTemplate(t, "report.tmpl", "**Report**\n{{ len .Entries }} issues\n")
+	out := runList_(t, "--template", path)
+	want := "**Report**\n4 issues\n"
+	if out != want {
+		t.Fatalf("plain-text template should bypass markdown rendering:\nwant %q\ngot  %q", want, out)
+	}
+}
+
+func TestList_EscapeCell(t *testing.T) {
+	t.Chdir(t.TempDir())
+	seedIssues(t)
+	root := newRoot()
+	var buf strings.Builder
+	root.SetOut(&buf)
+	root.SetArgs([]string{"create", "-t", "title|with|pipes"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	path := writeTemplate(t, "escape.tmpl", "{{ range .Entries }}{{ mdCell .Issue.Title }}\n{{ end }}")
+	out := runList_(t, "--template", path)
+	if !strings.Contains(out, `title\|with\|pipes`) {
+		t.Errorf("pipes should be escaped in template helper output:\n%s", out)
+	}
+}
+
+func TestList_MarkdownExtensionDetection(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{name: "report.md", want: true},
+		{name: "report.markdown", want: true},
+		{name: "report.mdown", want: true},
+		{name: "report.txt", want: false},
+		{name: "report", want: false},
+	} {
+		if got := isMarkdownTemplate(tc.name); got != tc.want {
+			t.Errorf("isMarkdownTemplate(%q) = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

@@ -7,10 +7,13 @@
 // to a target location in another repo or the user's home dir.
 package embedded
 
-import _ "embed"
+import "embed"
 
 //go:embed SKILL.md
 var Skill []byte
+
+//go:embed templates/*.md
+var Templates embed.FS
 
 // SkillFilename is the conventional basename for an installed skill.
 const SkillFilename = "SKILL.md"
