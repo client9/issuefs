@@ -63,7 +63,7 @@ func runMove(stdout, stderr io.Writer, ref, target string) error {
 		return err
 	}
 
-	iss, err := readIssue(m.Path)
+	iss, err := readIssue(m.AbsPath)
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func runMove(stdout, stderr io.Writer, ref, target string) error {
 	// True no-op: both location and frontmatter already in sync.
 	if !needFmUpdate && !needRename {
 		fmt.Fprintf(stderr, "%s is already in %s\n", m.Short, target)
-		fmt.Fprintln(stdout, m.Path)
+		fmt.Fprintln(stdout, m.AbsPath)
 		return nil
 	}
 
@@ -91,7 +91,7 @@ func runMove(stdout, stderr io.Writer, ref, target string) error {
 		}
 		// Edit-then-rename: write updated content in place first so a crash
 		// leaves the file in the source dir with state matching the source dir.
-		if err := os.WriteFile(m.Path, data, 0o644); err != nil {
+		if err := os.WriteFile(m.AbsPath, data, 0o644); err != nil {
 			return err
 		}
 	}
@@ -99,7 +99,7 @@ func runMove(stdout, stderr io.Writer, ref, target string) error {
 	// Rename: move the file across directories if it's not already in the
 	// target. When this is the only change (frontmatter was already correct),
 	// no event is appended — the directory was the bug, no transition happened.
-	finalPath := m.Path
+	finalPath := m.AbsPath
 	if needRename {
 		targetDir, err := store.EnsureSubdir(root, target)
 		if err != nil {
@@ -109,7 +109,7 @@ func runMove(stdout, stderr io.Writer, ref, target string) error {
 		if _, err := os.Stat(newPath); err == nil {
 			return fmt.Errorf("destination already exists: %s", newPath)
 		}
-		if err := os.Rename(m.Path, newPath); err != nil {
+		if err := os.Rename(m.AbsPath, newPath); err != nil {
 			return err
 		}
 		finalPath = newPath

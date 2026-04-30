@@ -105,9 +105,9 @@ func runList(stdout io.Writer, o *listOpts) error {
 		if !slices.Contains(states, m.State) {
 			continue
 		}
-		iss, err := readIssue(m.Path)
+		iss, err := readIssue(m.AbsPath)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", m.Path, err)
+			return fmt.Errorf("read %s: %w", m.AbsPath, err)
 		}
 		if !labelsMatch(iss.Labels, o.labels) {
 			continue

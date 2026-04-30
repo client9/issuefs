@@ -36,8 +36,11 @@ func TestResolver_PrefixUnique(t *testing.T) {
 			t.Errorf("Lookup(%q): %v", ref, err)
 			continue
 		}
-		if m.Path != want {
-			t.Errorf("Lookup(%q) = %s, want %s", ref, m.Path, want)
+		if m.Path != filepath.ToSlash(filepath.Join("issues", "backlog", filepath.Base(want))) {
+			t.Errorf("Lookup(%q) = %s, want repo-relative path", ref, m.Path)
+		}
+		if m.AbsPath != want {
+			t.Errorf("Lookup(%q) = %s, want %s", ref, m.AbsPath, want)
 		}
 	}
 }
@@ -85,7 +88,10 @@ func TestResolver_PathRef(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, err := r.Lookup(want)
-	if err != nil || m.Path != want {
+	if err != nil || m.Path != filepath.ToSlash(filepath.Join("issues", "backlog", filepath.Base(want))) {
+		t.Errorf("got %+v err=%v", m, err)
+	}
+	if m.AbsPath != want {
 		t.Errorf("got %+v err=%v", m, err)
 	}
 }

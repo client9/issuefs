@@ -10,11 +10,12 @@ import (
 
 // Match describes a single issue file located by the resolver.
 type Match struct {
-	Path  string // absolute path to the file
-	State string // backlog | active | done
-	Name  string // basename, e.g. "20260428T004315Z-9f2a4b7c-slug.md"
-	ID    string // "<timestamp>-<8hex>"
-	Short string // the 8-hex random suffix
+	Path    string // repo-relative path, e.g. "issues/done/1234-bug.md"
+	AbsPath string // absolute path to the file on disk
+	State   string // backlog | active | done
+	Name    string // basename, e.g. "20260428T004315Z-9f2a4b7c-slug.md"
+	ID      string // "<timestamp>-<8hex>"
+	Short   string // the 8-hex random suffix
 }
 
 // Resolver indexes every issue file under a root and resolves refs to them.
@@ -72,11 +73,12 @@ func matchFromName(state, dir, name string) (Match, bool) {
 		return Match{}, false
 	}
 	return Match{
-		Path:  filepath.Join(dir, name),
-		State: state,
-		Name:  name,
-		ID:    ts + "-" + hex,
-		Short: hex,
+		Path:    filepath.ToSlash(filepath.Join("issues", state, name)),
+		AbsPath: filepath.Join(dir, name),
+		State:   state,
+		Name:    name,
+		ID:      ts + "-" + hex,
+		Short:   hex,
 	}, true
 }
 
@@ -145,7 +147,7 @@ func (r *Resolver) lookupPath(ref string) (Match, error) {
 		return Match{}, err
 	}
 	for _, m := range r.all {
-		if m.Path == abs {
+		if m.AbsPath == abs {
 			return m, nil
 		}
 	}

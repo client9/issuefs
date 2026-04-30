@@ -83,14 +83,14 @@ func runView(stdout io.Writer, ref string, o *viewOpts) error {
 	// Formats that bypass glamour entirely.
 	switch o.format {
 	case "raw":
-		data, err := os.ReadFile(m.Path)
+		data, err := os.ReadFile(m.AbsPath)
 		if err != nil {
 			return err
 		}
 		_, err = stdout.Write(data)
 		return err
 	case "json":
-		iss, err := readIssue(m.Path)
+		iss, err := readIssue(m.AbsPath)
 		if err != nil {
 			return err
 		}
@@ -99,7 +99,7 @@ func runView(stdout io.Writer, ref string, o *viewOpts) error {
 		return enc.Encode(iss)
 	}
 
-	iss, err := readIssue(m.Path)
+	iss, err := readIssue(m.AbsPath)
 	if err != nil {
 		return err
 	}
