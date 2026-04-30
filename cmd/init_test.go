@@ -64,8 +64,8 @@ func TestInit_PartialRepair(t *testing.T) {
 	if strings.Contains(out, "created issues/backlog\n") || strings.Contains(out, "created issues/backlog ") {
 		// The "issues/backlog/.gitkeep" line is OK; the bare "issues/backlog" line is not.
 		// Be flexible: only fail if the bare backlog dir line appears.
-		lines := strings.Split(out, "\n")
-		for _, l := range lines {
+		lines := strings.SplitSeq(out, "\n")
+		for l := range lines {
 			if l == "created issues/backlog" {
 				t.Errorf("should not re-create existing backlog/:\n%s", out)
 			}
